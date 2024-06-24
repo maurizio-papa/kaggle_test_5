@@ -14,6 +14,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+come calcolare il gradiente in maniera parallela con più thread? 
+
+
+
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, reduction=16):
         super(ChannelAttention, self).__init__()
@@ -44,16 +55,7 @@ class SpatialAttention(nn.Module):
         x = self.conv1(x)  # Output shape: B x 1 x T
         return self.sigmoid(x) * x  # Element-wise multiplication
 
-class MaskedConv1D(nn.Conv1d):
-    def forward(self, x, mask=None):
-        x = super(MaskedConv1D, self).forward(x)
-        if mask is not None:
-            x = x * mask
-        return x, mask
 
-class LayerNorm(nn.LayerNorm):
-    def forward(self, x):
-        return super(LayerNorm, self).forward(x.transpose(1, 2)).transpose(1, 2)
 
 class ClsHead(nn.Module):
     """
@@ -123,6 +125,31 @@ class ClsHead(nn.Module):
             bias_value = -(math.log((1 - 1e-6) / 1e-6))
             for idx in empty_cls:
                 torch.nn.init.constant_(self.cls_head.conv.bias[idx], bias_value)
+
+    def forward(self, fpn_feats, fpn_masks):
+        assert len(fpn_feats) == len(fpn_masks)
+
+        # apply the classifier for each pyramid level
+        out_logits = tuple()
+        for _, (cur_feat, cur_mask) in enumerate(zip(fpn_feats, fpn_masks)):
+            if self.detach_feat:
+                cur_out = cur_feat.detach()
+            else:
+                cur_out = cur_feat
+            for idx in range(len(self.head)):
+                cur_out, _ = self.head[idx](cur_out, cur_mask)
+                cur_out = self.act(self.norm[idx](cur_out))
+
+            # Apply CBAM attention mechanisms
+            cur_out = self.channel_attention(cur_out)
+            cur_out = self.spatial_attention(cur_out)
+
+            cur_logits, _ = self.cls_head(cur_out, cur_mask)
+            out_logits += (cur_logits,)
+
+        # fpn_masks remains the same
+        return out_logits
+
 
     def forward(self, fpn_feats, fpn_masks):
         assert len(fpn_feats) == len(fpn_masks)
