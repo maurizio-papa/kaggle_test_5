@@ -14,16 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-come calcolare il gradiente in maniera parallela con più thread? 
-
-
-
-
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import math
 
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, reduction=16):
